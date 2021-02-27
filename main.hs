@@ -7,6 +7,7 @@ import qualified Data.Maybe
 -- import Graphics.Gloss.Juicy
 import Codec.Picture
 import Codec.Picture.Gif
+import Codec.Picture.Types
 import qualified Data.Vector
 import qualified Data.Vector.Storable
 
@@ -332,26 +333,29 @@ mainImage sidelength = map (\y -> map (getColorAtPixel defaultCamera sidelength 
 mainImageW8 :: Int -> [[(Pixel8,Pixel8,Pixel8)]]
 mainImageW8 sidelength = map (\y -> map (getColorAtPixelW8 defaultCamera sidelength y) [0..sidelength-1]) [0..sidelength-1]
 
-mainImageW83_cc :: Int -> [Pixel8]
-mainImageW83_cc sidelength = concat (map (\(a,b,c) -> [a,b,c]) (concat (mainImageW8 sidelength)))
+mainImageW83_cc :: Int -> [PixelBaseComponent Pixel8]
+mainImageW83_cc sidelength = concat (map (\(a,b,c) -> [ a, b, c]) (concat (mainImageW8 sidelength)))
 
 getPixelRGB8 :: Camera -> Int -> Int -> Int -> PixelRGB8 
 getPixelRGB8 cam sidelength x y = let (r,g,b) = getColorAtPixelW8 cam sidelength x y in 
    PixelRGB8 r g b
 
-mainImagePixelRGB8 :: Int -> [[PixelRGB8]]
-mainImagePixelRGB8 sidelength = map (\y -> map (getPixelRGB8 defaultCamera sidelength y) [0..sidelength-1]) [0..sidelength-1]
+mainImagePixelRGB8 :: Int -> [PixelRGB8]
+mainImagePixelRGB8 sidelength = concat (map (\y -> map (getPixelRGB8 defaultCamera sidelength y) [0..sidelength-1]) [0..sidelength-1])
 
 
 -- >>>mainImage 2
 -- [[(180.0,180.0,180.0),(141.263602302561,141.263602302561,141.263602302561)],[(141.263602302561,141.263602302561,141.263602302561),(118.09800000000001,118.09800000000001,118.09800000000001)]]
  
-mainImageVector int = Data.Vector.Storable.fromList (mainImageW83_cc int)
+mainImageVectorP8 sl = Data.Vector.Storable.fromList (mainImageW83_cc sl)
 
-mainImageImage sidelength = Image {imageHeight = sidelength,imageWidth=sidelength,imageData=mainImageVector sidelength}
+mainImageVectorPRGB8 sl = Data.Vector.Storable.fromList  (mainImagePixelRGB8 sl)
+
+mainImageImage sidelength = Image {imageHeight = sidelength,imageWidth=sidelength,imageData=mainImageVectorPRGB8 sidelength}
 
 
 sidelength = 300
+
 
 testgif1frames = [getFrameFromImage (mainImageImage sidelength)]
 
@@ -363,7 +367,7 @@ gifobj =
    GifEncode geWidth geHeight Nothing Nothing geLooping geFrames
 
 getFrameFromImage img = -- this thing only give you one frame from one image
-   let pxls = mainImageImage sidelength in --it is Image Pixel8 here //TODO
+   let pxls = mainImageImage sidelength in --it is Image Pixel8 here
    GifFrame sidelength sidelength Nothing Nothing 1 DisposalAny pxls
 
 
