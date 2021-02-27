@@ -1,6 +1,10 @@
 module Main where
 
 import qualified Data.Maybe
+import Graphics.Gloss
+import Graphics.Gloss.Juicy
+import Codec.Picture
+
 main :: IO ()
 main = print "test"
 
@@ -158,7 +162,10 @@ transformSpherePointToPlane sph pnt =
    Plane pnt nrm
 
 data RayResult = NoHit |
-   Hit {dist :: Double, color :: Vec, newRay :: Maybe Ray}
+   Hit {dist :: Double, clr :: Vec, newRay :: Maybe Ray}
+
+rrHits NoHit = False 
+rrHits _ = True
 
 type Traceable = Ray -> RayResult
 -- ADD OBJECT IN THE SCENE HERE
@@ -249,37 +256,63 @@ getHitTraceableOfRay ry (trcbl:trcbls) =
                if (dist1 <= dist2)                                           -- to the closest object in the rest of the list
             then Just trcbl else Just trcbl2                            -- return the one has closer distance
       
+pickResult :: RayResult -> RayResult -> RayResult
+pickResult NoHit r = r
+pickResult r NoHit = r
+pickResult Hit {dist=d1, clr = c1, newRay=nr1} Hit {dist=d2, clr=c2, newRay=nr2} = 
+   if d1 > d2 then Hit {dist=d2, clr=c2, newRay=nr2} else
+      Hit {dist=d1, clr = c1, newRay=nr1}
 
+getHitTraceable :: Ray -> [Traceable] -> RayResult
+getHitTraceable ry traceables = 
+   let applied = map (\f -> f ry) traceables in
+   let hits = filter rrHits applied in 
+   let notBehindCamera = filter (\Hit {dist = dst} -> dst > 0) hits in 
+   case notBehindCamera of 
+      [] -> NoHit
+      (t:ts) -> foldl pickResult t ts
 
-getColorOfRay :: Ray -> Int -> Double -> Vec
-getColorOfRay ry limit totalDist =
-   if length(globalTraceablelist) == 0                         -- if list is empty 
-      then (0,0,0) else                                      -- return BLACK
-   let  trcbl = (getHitTraceableOfRay ry (globalTraceablelist)) in 
-      case trcbl of 
-         Nothing -> (0,0,0)
-         Just something -> 
-   -- if Just trcbl == Nothing                                         -- if this ray does not hit any object
-   --    then (0,0,0) else                                      -- return BLACK
-            let hitResult = something ry in --this is wrong, trcbl is a Maybe Traceable, not a Traceable. //TODO                          
-            let dimCoef = 0.999 * (totalDist + dist (hitResult)) in   
-               case (newRay hitResult, limit) of 
-                  (_,0) ->  vmap (dimCoef *) (color hitResult)
-                  (Nothing,_) ->  vmap (dimCoef *) (color hitResult)       
-                  (Just newRayobj,limit) ->                     
-            -- if (newRay (hitResult) == Nothing) || (limit == 0)          -- if it hit, and newRay is nothing or the bounce limit is reached
-            --    then (vmap (dimCoef *) (color hitResult)) else          -- then return the color of current object (*modified by dimCoef)
-                     -- let Just newRayobj = newRay (hitResult)in
-                     let newRayColor = (getColorOfRay (newRayobj)) (limit - 1) (totalDist + dist (hitResult)) in -- get color of the newRay, if it hit, and newRay is not nothing 
-                     --this is wrong, it tries get the color of a Maybe Ray instead of a Ray //TODO
-                     (vmap (dimCoef *) (color hitResult)) +. newRayColor        --then mix current color with the color of the newRay (*modified by dimCoef)
+-- getColorOfRay :: Ray -> Int -> Double -> Vec
+-- getColorOfRay ry limit totalDist =
+--    if length(globalTraceablelist) == 0                         -- if list is empty 
+--       then (0,0,0) else                                      -- return BLACK
+--    let  trcbl = (getHitTraceableOfRay ry (globalTraceablelist)) in 
+--       case trcbl of 
+--          Nothing -> (0,0,0)
+--          Just something -> 
+--    -- if Just trcbl == Nothing                                         -- if this ray does not hit any object
+--    --    then (0,0,0) else                                      -- return BLACK
+--             let hitResult = something ry in --this is wrong, trcbl is a Maybe Traceable, not a Traceable. //TODO                          
+--             let dimCoef = 0.999 * (totalDist + dist (hitResult)) in   
+--                case (newRay hitResult, limit) of 
+--                   (_,0) ->  vmap (dimCoef *) (clr hitResult)
+--                   (Nothing,_) ->  vmap (dimCoef *) (clr hitResult)       
+--                   (Just newRayobj,limit) ->                     
+--             -- if (newRay (hitResult) == Nothing) || (limit == 0)          -- if it hit, and newRay is nothing or the bounce limit is reached
+--             --    then (vmap (dimCoef *) (color hitResult)) else          -- then return the color of current object (*modified by dimCoef)
+--                      -- let Just newRayobj = newRay (hitResult)in
+--                      let newRayColor = (getColorOfRay (newRayobj)) (limit - 1) (totalDist + dist (hitResult)) in -- get color of the newRay, if it hit, and newRay is not nothing 
+--                      --this is wrong, it tries get the color of a Maybe Ray instead of a Ray //TODO
+--                      (vmap ((clr hitResult) *. dimCoef) +. newRayColor)        --then mix current color with the color of the newRay (*modified by dimCoef)
+
+dm :: Vec -> Double -> Vec
+dm v d = v *. (0.9 ** d)
+
+getColorOfRay_v2 :: Ray -> Int -> Double -> Vec
+getColorOfRay_v2 ry limit totalDist = 
+   case (limit,getHitTraceable ry globalTraceablelist) of 
+      (_,NoHit) -> (0,0,0)
+      (_,Hit {dist=d, clr = c, newRay=Nothing}) -> dm c (d + totalDist)
+      (0,Hit {dist=d, clr = c, newRay=Just nr}) -> dm c (d + totalDist)
+      (_,Hit {dist=d, clr = c, newRay=Just nr}) -> getColorOfRay_v2 nr (limit - 1) (d + totalDist)
+
 
 --consider the image to be a square (you can still ask for pixel indices outside the square though.)
 --the main image is mapped onto x,y in [0, sidelength) 
 getColorAtPixel :: Camera -> Int -> Int -> Int -> Vec 
 getColorAtPixel cam sidelength x y = 
    let ry = getRayAtPixel cam sidelength x y in 
-      getColorOfRay ry 100 0
+      getColorOfRay_v2 ry 100 0
 
 defaultCamera = Camera {position = (2,1,1), fov=pi/4, yaw=0,pitch=0}
 
@@ -287,4 +320,4 @@ mainImage :: Int -> [[Vec]]
 mainImage sidelength = map (\y -> map (getColorAtPixel defaultCamera sidelength y) [0..sidelength-1]) [0..sidelength-1]
 
 -- >>>mainImage 2
--- [[(199.80000000000004,199.80000000000004,199.80000000000004),(-848.4629832063654,-848.4629832063654,-848.4629832063654)],[(-848.4629832063654,-848.4629832063654,-848.4629832063654),(-199.79999999999995,-199.79999999999995,-199.79999999999995)]]
+-- [[(180.0,180.0,180.0),(141.263602302561,141.263602302561,141.263602302561)],[(141.263602302561,141.263602302561,141.263602302561),(118.09800000000001,118.09800000000001,118.09800000000001)]]
