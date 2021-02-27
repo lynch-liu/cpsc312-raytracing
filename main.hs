@@ -1,9 +1,10 @@
 module Main where
 
 import qualified Data.Maybe
-import Graphics.Gloss
-import Graphics.Gloss.Juicy
+-- import Graphics.Gloss
+-- import Graphics.Gloss.Juicy
 import Codec.Picture
+import qualified Data.Vector
 
 main :: IO ()
 main = print "test"
@@ -314,10 +315,42 @@ getColorAtPixel cam sidelength x y =
    let ry = getRayAtPixel cam sidelength x y in 
       getColorOfRay_v2 ry 100 0
 
+getColorAtPixelW8 :: Camera -> Int -> Int -> Int -> (Pixel8,Pixel8,Pixel8)
+getColorAtPixelW8 cam sidelength x y =let (r,g,b) =  (getColorAtPixel cam sidelength x y) in
+   (round r, round g, round b)
+
 defaultCamera = Camera {position = (2,1,1), fov=pi/4, yaw=0,pitch=0}
+
 
 mainImage :: Int -> [[Vec]]
 mainImage sidelength = map (\y -> map (getColorAtPixel defaultCamera sidelength y) [0..sidelength-1]) [0..sidelength-1]
 
+mainImageW8 :: Int -> [[(Pixel8,Pixel8,Pixel8)]]
+mainImageW8 sidelength = map (\y -> map (getColorAtPixelW8 defaultCamera sidelength y) [0..sidelength-1]) [0..sidelength-1]
+
+getPixelRGB8 :: Camera -> Int -> Int -> Int -> PixelRGB8 
+getPixelRGB8 cam sidelength x y = let (r,g,b) = getColorAtPixelW8 cam sidelength x y in 
+   PixelRGB8 r g b
+
+mainImagePixelRGB8 :: Int -> [[PixelRGB8]]
+mainImageW8 sidelength = map (\y -> map (getPixelRGB8 defaultCamera sidelength y) [0..sidelength-1]) [0..sidelength-1]
+
+
 -- >>>mainImage 2
 -- [[(180.0,180.0,180.0),(141.263602302561,141.263602302561,141.263602302561)],[(141.263602302561,141.263602302561,141.263602302561),(118.09800000000001,118.09800000000001,118.09800000000001)]]
+ 
+mainImageVector int = Data.Vector.fromList (concat mainImagePixelRGB8 int)
+
+mainImageImage sidelength = Image {imageHeight = sidelength,imageWidth=sidelength,imageData=mainImageVector sidelength}
+
+-- gifobj = 
+--    let geWidth = sidelength in
+--    let geHeight = sidelength in
+--    let geLooping = LoopingForever in
+--    let geFrames = getFrameFromImage img in
+--    GifEncode geWidth geHeight Nothing Nothing geLooping geFrames
+
+-- getFrameFromImage :: Image -> GifFrame
+-- getFrameFromImage img = 
+--    let pxls = Nothing in --it is Image Pixel8 here //TODO
+--    GifFrame sidelength sidelength Nothing Nothing 1 DisposalAny pxls
