@@ -249,7 +249,7 @@ getColorOfRay ry limit totalDist =
    if length(globalTraceablelist) == 0                         -- if list is empty 
       then (0,0,0) else                                      -- return BLACK
    let Just trcbl = (getHitTraceableOfRay ry (globalTraceablelist)) in 
-   if trcbl == Nothing                                         -- if this ray does not hit any object
+   if Just trcbl == Nothing                                         -- if this ray does not hit any object
       then (0,0,0) else                                      -- return BLACK
    let hitResult = trcbl ry in --this is wrong, trcbl is a Maybe Traceable, not a Traceable. //TODO                          
    let dimCoef = 0.999 * (totalDist + dist (hitResult)) in                                        
