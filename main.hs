@@ -273,3 +273,18 @@ getColorOfRay ry limit totalDist =
                      let newRayColor = (getColorOfRay (newRayobj)) (limit - 1) (totalDist + dist (hitResult)) in -- get color of the newRay, if it hit, and newRay is not nothing 
                      --this is wrong, it tries get the color of a Maybe Ray instead of a Ray //TODO
                      (vmap (dimCoef *) (color hitResult)) +. newRayColor        --then mix current color with the color of the newRay (*modified by dimCoef)
+
+--consider the image to be a square (you can still ask for pixel indices outside the square though.)
+--the main image is mapped onto x,y in [0, sidelength) 
+getColorAtPixel :: Camera -> Int -> Int -> Int -> Vec 
+getColorAtPixel cam sidelength x y = 
+   let ry = getRayAtPixel cam sidelength x y in 
+      getColorOfRay ry 100 0
+
+defaultCamera = Camera {position = (2,1,1), fov=pi/4, yaw=0,pitch=0}
+
+mainImage :: Int -> [[Vec]]
+mainImage sidelength = map (\y -> map (getColorAtPixel defaultCamera sidelength y) [0..sidelength-1]) [0..sidelength-1]
+
+-- >>>mainImage 2
+-- [[(199.80000000000004,199.80000000000004,199.80000000000004),(-848.4629832063654,-848.4629832063654,-848.4629832063654)],[(-848.4629832063654,-848.4629832063654,-848.4629832063654),(-199.79999999999995,-199.79999999999995,-199.79999999999995)]]
