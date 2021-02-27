@@ -160,12 +160,12 @@ data RayResult = NoHit |
    Hit {dist :: Double, color :: Vec, newRay :: Maybe Ray}
 
 type Traceable = Ray -> RayResult
---TODO: ADD OBJECT IN THE SCENE HERE
+-- ADD OBJECT IN THE SCENE HERE
 -- object 1: a reflective sphere
 trcbl1 :: Traceable
 trcbl1 ry = 
    let sph = Sphere rad (centerx,centery,centerz) in       -- declare the sphere
-   let (dist,pnt) = sphereIntersectDist sph ry in          -- calculate distance and hitPoint
+   let Maybe (dist,pnt) = sphereIntersectDist sph ry in          -- calculate distance and hitPoint
    if dist then                                             -- Ray hit the sphere
       let pl = transformSpherePointToPlane sph pnt in             -- get plane generated from the hit point on sphere
       let newRay = Ray pnt (reflectDirOff pl (look ry)) in        -- get the reflected ray
@@ -222,7 +222,6 @@ getHitTraceableOfRay ry (trcbl:trcbls) =
    if (hitResult1 == NoHit)                           -- if current traceble does not hit but there are hit in the rest of the list
       then trcbl2 else                              --return result from the rest of the list
    let dist1 = dist (hitResult1) in                   -- if both current traceble hit and there are hit in the rest of the list 
-   let trcbl2 = getHitTraceableOfRay ry trcbls in 
    let hitResult2 = trcbl2 ry in --this is wrong, trcbl2 is a Maybe Traceable, not a Traceable. //TODO
    let dist2 = dist (hitResult2) in                               -- compare the distance of current object 
    if (dist1 <= dist 2)                                           -- to the closest object in the rest of the list
