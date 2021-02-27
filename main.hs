@@ -1,5 +1,6 @@
 module Main where
 
+import qualified Data.Maybe
 main :: IO ()
 main = print "test"
 
@@ -163,26 +164,42 @@ type Traceable = Ray -> RayResult
 -- ADD OBJECT IN THE SCENE HERE
 -- object 1: a reflective sphere
 trcbl1 :: Traceable
-trcbl1 ry = 
+trcbl1 ry =
+   let rad = 1 in
+   let centerx = 1 in
+   let centery = 1 in
+   let centerz = 1 in 
    let sph = Sphere rad (centerx,centery,centerz) in       -- declare the sphere
-   let Maybe (dist,pnt) = sphereIntersectDist sph ry in          -- calculate distance and hitPoint
-   if dist then                                             -- Ray hit the sphere
+   if Data.Maybe.isJust (sphereIntersectDist sph ry) then                                             -- Ray hit the sphere
+      let Just (dist,pnt) = sphereIntersectDist sph ry in         -- calculate distance and hitPoint
       let pl = transformSpherePointToPlane sph pnt in             -- get plane generated from the hit point on sphere
-      let newRay = Ray pnt (reflectDirOff pl (look ry)) in        -- get the reflected ray
-      let hitResult = Hit dist (colorr,colorg,colorb) newRay in   -- return the hitresult with distance, color and new ray
-      Just hitResult
-   else Just NoHit                                          -- Ray miss the sphere, return NoHit
+      let newRay = Ray pnt (reflectDirOff pl (look ry)) in 
+               let colorr = 200 in
+      let colorg = 200 in
+      let colorb = 200 in       -- get the reflected ray
+      let hitResult = Hit dist (colorr,colorg,colorb) (Just newRay) in   -- return the hitresult with distance, color and new ray
+      hitResult
+   else NoHit                                          -- Ray miss the sphere, return NoHit
 
 -- object 2: a non-reflective plane
 trcbl2 :: Traceable
 trcbl2 ry = 
+   let pntx = 1 in
+   let pnty = 1 in
+   let pntz = 1 in
+   let nrmx = 1 in
+   let nrmy = 1 in
+   let nrmz = 1 in
    let pl = Plane (pntx,pnty,pntz) (nrmx,nrmy,nrmz) in   -- declare the plane
-   let (dist,pnt) = planeIntersectDist pl ry in                -- calculate distance and hitpoint
-   if dist then                                          -- Ray hit the sphere
+   if Data.Maybe.isJust (planeIntersectDist pl ry) then                                          -- Ray hit the sphere
+      let Just (dist,pnt) = planeIntersectDist pl ry in                -- calculate distance and hitpoint
+      let colorr = 200 in
+      let colorg = 200 in
+      let colorb = 200 in
       let newRay = Nothing in                                     -- set to Nothing for non-reflective item
       let hitResult = Hit dist (colorr,colorg,colorb) newRay in   -- return the hitresult with distance, color and Nothing
-      Just hitResult
-   else Just NoHit                                       -- Ray miss the sphere, return NoHit
+      hitResult
+   else NoHit                                       -- Ray miss the sphere, return NoHit
 
 --Add all traceable to a list so that can be used later
 globalTraceablelist :: [Traceable]
@@ -216,13 +233,13 @@ getHitTraceableOfRay :: Ray -> [Traceable] -> Maybe Traceable
 getHitTraceableOfRay _ [] = Nothing
 getHitTraceableOfRay ry (trcbl:trcbls) =
    let hitResult1 = trcbl ry in
-   let trcbl2 = getHitTraceableOfRay ry trcbls in 
+   let Just trcbl2 = getHitTraceableOfRay ry trcbls in 
    if (hitResult1 == NoHit) && (trcbl2 == Nothing)    -- if current traceble does not hit and there are no hit either in the rest of the list
-      then Nothing else                             --return Nothing
-   if (hitResult1 == NoHit)                           -- if current traceble does not hit but there are hit in the rest of the list
-      then trcbl2 else                              --return result from the rest of the list
+      then Nothing else                                  --return Nothing
+   if hitResult1 == NoHit                             -- if current traceble does not hit but there are hit in the rest of the list
+      then Just trcbl2 else                                   --return result from the rest of the list
    let dist1 = dist (hitResult1) in                   -- if both current traceble hit and there are hit in the rest of the list 
-   let hitResult2 = trcbl2 ry in --this is wrong, trcbl2 is a Maybe Traceable, not a Traceable. //TODO
+   let hitResult2 = trcbl2 ry in        
    let dist2 = dist (hitResult2) in                               -- compare the distance of current object 
    if (dist1 <= dist 2)                                           -- to the closest object in the rest of the list
       then Just trcbl else Just trcbl2                            -- return the one has closer distance
@@ -231,13 +248,14 @@ getColorOfRay :: Ray -> Int -> Double -> Vec
 getColorOfRay ry limit totalDist =
    if length(globalTraceablelist) == 0                         -- if list is empty 
       then (0,0,0) else                                      -- return BLACK
-   let trcbl = (getHitTraceableOfRay ry (globalTraceablelist)) in 
+   let Just trcbl = (getHitTraceableOfRay ry (globalTraceablelist)) in 
    if trcbl == Nothing                                         -- if this ray does not hit any object
       then (0,0,0) else                                      -- return BLACK
    let hitResult = trcbl ry in --this is wrong, trcbl is a Maybe Traceable, not a Traceable. //TODO                          
    let dimCoef = 0.999 * (totalDist + dist (hitResult)) in                                        
    if (newRay (hitResult) == Nothing) || (limit == 0)          -- if it hit, and newRay is nothing or the bounce limit is reached
       then (vmap (dimCoef *) (color hitResult)) else          -- then return the color of current object (*modified by dimCoef)
-         let newRayColor = (getColorOfRay (newRay (hitResult))) (limit - 1) (totalDist + dist (hitResult)) in -- get color of the newRay, if it hit, and newRay is not nothing 
+         let Just newRayobj = newRay (hitResult)in
+         let newRayColor = (getColorOfRay (newRayobj)) (limit - 1) (totalDist + dist (hitResult)) in -- get color of the newRay, if it hit, and newRay is not nothing 
             --this is wrong, it tries get the color of a Maybe Ray instead of a Ray //TODO
          (vmap (dimCoef *) (color hitResult)) +. newRayColor        --then mix current color with the color of the newRay (*modified by dimCoef)
