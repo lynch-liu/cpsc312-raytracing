@@ -233,29 +233,43 @@ getHitTraceableOfRay :: Ray -> [Traceable] -> Maybe Traceable
 getHitTraceableOfRay _ [] = Nothing
 getHitTraceableOfRay ry (trcbl:trcbls) =
    let hitResult1 = trcbl ry in
-   let Just trcbl2 = getHitTraceableOfRay ry trcbls in 
-   if (hitResult1 == NoHit) && (trcbl2 == Nothing)    -- if current traceble does not hit and there are no hit either in the rest of the list
-      then Nothing else                                  --return Nothing
-   if hitResult1 == NoHit                             -- if current traceble does not hit but there are hit in the rest of the list
-      then Just trcbl2 else                                   --return result from the rest of the list
-   let dist1 = dist (hitResult1) in                   -- if both current traceble hit and there are hit in the rest of the list 
-   let hitResult2 = trcbl2 ry in        
-   let dist2 = dist (hitResult2) in                               -- compare the distance of current object 
-   if (dist1 <= dist 2)                                           -- to the closest object in the rest of the list
-      then Just trcbl else Just trcbl2                            -- return the one has closer distance
+   let trcbl2 = getHitTraceableOfRay ry trcbls in 
+      case (hitResult1, trcbl2) of 
+         (NoHit,Nothing) -> Nothing 
+         (NoHit,other) -> other 
+         (Hit {}, Nothing) -> Just trcbl 
+         (Hit {dist = dist1},Just trcbl2) -> let hitResult2 = trcbl2 ry in 
+   -- if (hitResult1 == NoHit) && (trcbl2 == Nothing)    -- if current traceble does not hit and there are no hit either in the rest of the list
+   --    then Nothing else                                  --return Nothing
+   -- if hitResult1 == NoHit                             -- if current traceble does not hit but there are hit in the rest of the list
+   --    then Just trcbl2 else                                   --return result from the rest of the list
+   -- let dist1 = dist (hitResult1) in                   -- if both current traceble hit and there are hit in the rest of the list 
+   -- let hitResult2 = trcbl2 ry in        
+            let dist2 = dist (hitResult2) in                               -- compare the distance of current object 
+               if (dist1 <= dist2)                                           -- to the closest object in the rest of the list
+            then Just trcbl else Just trcbl2                            -- return the one has closer distance
       
+
+
 getColorOfRay :: Ray -> Int -> Double -> Vec
 getColorOfRay ry limit totalDist =
    if length(globalTraceablelist) == 0                         -- if list is empty 
       then (0,0,0) else                                      -- return BLACK
-   let Just trcbl = (getHitTraceableOfRay ry (globalTraceablelist)) in 
-   if Just trcbl == Nothing                                         -- if this ray does not hit any object
-      then (0,0,0) else                                      -- return BLACK
-   let hitResult = trcbl ry in --this is wrong, trcbl is a Maybe Traceable, not a Traceable. //TODO                          
-   let dimCoef = 0.999 * (totalDist + dist (hitResult)) in                                        
-   if (newRay (hitResult) == Nothing) || (limit == 0)          -- if it hit, and newRay is nothing or the bounce limit is reached
-      then (vmap (dimCoef *) (color hitResult)) else          -- then return the color of current object (*modified by dimCoef)
-         let Just newRayobj = newRay (hitResult)in
-         let newRayColor = (getColorOfRay (newRayobj)) (limit - 1) (totalDist + dist (hitResult)) in -- get color of the newRay, if it hit, and newRay is not nothing 
-            --this is wrong, it tries get the color of a Maybe Ray instead of a Ray //TODO
-         (vmap (dimCoef *) (color hitResult)) +. newRayColor        --then mix current color with the color of the newRay (*modified by dimCoef)
+   let  trcbl = (getHitTraceableOfRay ry (globalTraceablelist)) in 
+      case trcbl of 
+         Nothing -> (0,0,0)
+         Just something -> 
+   -- if Just trcbl == Nothing                                         -- if this ray does not hit any object
+   --    then (0,0,0) else                                      -- return BLACK
+            let hitResult = something ry in --this is wrong, trcbl is a Maybe Traceable, not a Traceable. //TODO                          
+            let dimCoef = 0.999 * (totalDist + dist (hitResult)) in   
+               case (newRay hitResult, limit) of 
+                  (_,0) ->  vmap (dimCoef *) (color hitResult)
+                  (Nothing,_) ->  vmap (dimCoef *) (color hitResult)       
+                  (Just newRayobj,limit) ->                     
+            -- if (newRay (hitResult) == Nothing) || (limit == 0)          -- if it hit, and newRay is nothing or the bounce limit is reached
+            --    then (vmap (dimCoef *) (color hitResult)) else          -- then return the color of current object (*modified by dimCoef)
+                     -- let Just newRayobj = newRay (hitResult)in
+                     let newRayColor = (getColorOfRay (newRayobj)) (limit - 1) (totalDist + dist (hitResult)) in -- get color of the newRay, if it hit, and newRay is not nothing 
+                     --this is wrong, it tries get the color of a Maybe Ray instead of a Ray //TODO
+                     (vmap (dimCoef *) (color hitResult)) +. newRayColor        --then mix current color with the color of the newRay (*modified by dimCoef)
