@@ -1,13 +1,17 @@
+{-# LANGUAGE GADTs #-}
+
 module Main where
 
 import qualified Data.Maybe
 -- import Graphics.Gloss
 -- import Graphics.Gloss.Juicy
 import Codec.Picture
+import Codec.Picture.Gif
 import qualified Data.Vector
+import qualified Data.Vector.Storable
 
-main :: IO ()
-main = print "test"
+-- main :: IO ()
+-- main = print "test"
 
 type Vec = (Double,Double,Double)
 
@@ -328,29 +332,44 @@ mainImage sidelength = map (\y -> map (getColorAtPixel defaultCamera sidelength 
 mainImageW8 :: Int -> [[(Pixel8,Pixel8,Pixel8)]]
 mainImageW8 sidelength = map (\y -> map (getColorAtPixelW8 defaultCamera sidelength y) [0..sidelength-1]) [0..sidelength-1]
 
+mainImageW83_cc :: Int -> [Pixel8]
+mainImageW83_cc sidelength = concat (map (\(a,b,c) -> [a,b,c]) (concat (mainImageW8 sidelength)))
+
 getPixelRGB8 :: Camera -> Int -> Int -> Int -> PixelRGB8 
 getPixelRGB8 cam sidelength x y = let (r,g,b) = getColorAtPixelW8 cam sidelength x y in 
    PixelRGB8 r g b
 
 mainImagePixelRGB8 :: Int -> [[PixelRGB8]]
-mainImageW8 sidelength = map (\y -> map (getPixelRGB8 defaultCamera sidelength y) [0..sidelength-1]) [0..sidelength-1]
+mainImagePixelRGB8 sidelength = map (\y -> map (getPixelRGB8 defaultCamera sidelength y) [0..sidelength-1]) [0..sidelength-1]
 
 
 -- >>>mainImage 2
 -- [[(180.0,180.0,180.0),(141.263602302561,141.263602302561,141.263602302561)],[(141.263602302561,141.263602302561,141.263602302561),(118.09800000000001,118.09800000000001,118.09800000000001)]]
  
-mainImageVector int = Data.Vector.fromList (concat mainImagePixelRGB8 int)
+mainImageVector int = Data.Vector.Storable.fromList (mainImageW83_cc int)
 
 mainImageImage sidelength = Image {imageHeight = sidelength,imageWidth=sidelength,imageData=mainImageVector sidelength}
 
--- gifobj = 
---    let geWidth = sidelength in
---    let geHeight = sidelength in
---    let geLooping = LoopingForever in
---    let geFrames = getFrameFromImage img in
---    GifEncode geWidth geHeight Nothing Nothing geLooping geFrames
 
--- getFrameFromImage :: Image -> GifFrame
--- getFrameFromImage img = 
---    let pxls = Nothing in --it is Image Pixel8 here //TODO
---    GifFrame sidelength sidelength Nothing Nothing 1 DisposalAny pxls
+sidelength = 300
+
+testgif1frames = [getFrameFromImage (mainImageImage sidelength)]
+
+gifobj = 
+   let geWidth = sidelength in
+   let geHeight = sidelength in
+   let geLooping = LoopingForever in
+   let geFrames = testgif1frames in --type is [gifFrame] //TODO you need to generate frame by frame and put it in a []
+   GifEncode geWidth geHeight Nothing Nothing geLooping geFrames
+
+getFrameFromImage img = -- this thing only give you one frame from one image
+   let pxls = mainImageImage sidelength in --it is Image Pixel8 here //TODO
+   GifFrame sidelength sidelength Nothing Nothing 1 DisposalAny pxls
+
+
+eitherIO :: Either String (IO ()) -> IO ()
+eitherIO = either (putStrLn) (\x -> x)
+
+main :: IO ()
+
+main = eitherIO (Codec.Picture.Gif.writeComplexGifImage "./img_output" (gifobj))  -- this save gif to local
