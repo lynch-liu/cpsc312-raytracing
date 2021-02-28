@@ -147,14 +147,14 @@ raydist2distpoint ry dst = (dst, look ry *. dst +. pos ry)
 sphereIntersectDist :: Sphere -> Ray -> Maybe (Double,Vec)
 sphereIntersectDist sph ry = 
    let r2 = radius sph * radius sph in 
-   let center2pos = center sph -. pos ry in 
+   let center2pos = pos ry -. center sph in 
    let distanceFromCenterToPosSquared = quadrance center2pos in 
    let loc = center2pos `dot` look ry in 
    let loc2 = loc * loc in 
    let back2frontDistSquared = loc2 - distanceFromCenterToPosSquared + r2 in 
    if back2frontDistSquared < 0 then Nothing else
       let back2frontDist = sqrt back2frontDistSquared in 
-      let ans1 = -loc - back2frontDist in 
+      let ans1 = (-loc) - back2frontDist in 
       --ans1 is the distance to the front of the sphere and ans2 the distance to the back of the sphere
       --if you're not inside the sphere, you want ans1
       if ans1 > 0 then Just (raydist2distpoint ry ans1) else 
@@ -214,9 +214,38 @@ trcbl2 ry =
       hitResult
    else NoHit                                       -- Ray miss the sphere, return NoHit
 
+makeCheckerboardFloorPlane :: Double -> Vec -> Vec -> Double -> Double -> Traceable
+makeCheckerboardFloorPlane h c1 c2 xoffset yoffset ray = 
+   let thePlane = Plane{pnt=(0,h,0),nrm=(0,1,0)} in 
+   case planeIntersectDist thePlane ray of 
+      Nothing -> NoHit 
+      Just (d,(ptx,_,ptz)) -> 
+         let chosenColor = if even (round ptx) == even (round ptz) then c1 else c2 in
+         Hit {dist=d,clr=chosenColor,newRay=Nothing}
+
+makeReflectiveSphere :: Vec -> Double -> Vec -> Traceable
+makeReflectiveSphere cntr r clr ray = 
+   let theSphere = Sphere {radius=r,center=cntr} in 
+      case sphereIntersectDist theSphere ray of 
+         Nothing -> NoHit 
+         Just (d,pnt) -> let tangentPlane = transformSpherePointToPlane theSphere pnt in 
+            let incidentDir = reflectDirOff tangentPlane (look ray) in 
+            let pnt2 = pnt +. (incidentDir *. epsilon) in --make sure it doesn't count as already intersecting the sphere
+            let nwry = Ray {pos = pnt2, look = incidentDir} in 
+            Hit {dist=d,clr=clr,newRay = Just nwry}
+
+makeColoredSphere :: Vec -> Double -> Vec -> Traceable
+makeColoredSphere cntr r clr ray = 
+   let theSphere = Sphere {radius=r,center=cntr} in 
+      case sphereIntersectDist theSphere ray of 
+         Nothing -> NoHit 
+         Just (d,pnt) -> Hit {dist=d,clr=clr,newRay = Nothing}
+
+type Scene = [Traceable]
+
 --Add all traceable to a list so that can be used later
-globalTraceablelist :: [Traceable]
-globalTraceablelist = [trcbl1,trcbl2]
+-- globalTraceablelist :: [Traceable]
+-- globalTraceablelist = [trcbl1,trcbl2]
 
 data Camera = Camera {position :: Vec, fov, yaw, pitch :: Double}
 
@@ -239,7 +268,7 @@ getRayAtPixel cam sidelength x y =
    let dist = slf / 2 / tan (fov cam) in 
    --rotate this point accordint to the yaw and pitch of the camera 
    let camrot = rotxy (pitch cam) *... rotxz (yaw cam) in 
-   let lk = camrot *.. (dist,xf2,yf2) in 
+   let lk = normalize (camrot *.. (dist,-yf2,xf2)) in 
       Ray {pos = position cam, look = lk}
    
 getHitTraceableOfRay :: Ray -> [Traceable] -> Maybe Traceable
@@ -269,9 +298,9 @@ pickResult Hit {dist=d1, clr = c1, newRay=nr1} Hit {dist=d2, clr=c2, newRay=nr2}
    if d1 > d2 then Hit {dist=d2, clr=c2, newRay=nr2} else
       Hit {dist=d1, clr = c1, newRay=nr1}
 
-getHitTraceable :: Ray -> [Traceable] -> RayResult
-getHitTraceable ry traceables = 
-   let applied = map (\f -> f ry) traceables in
+scene2TraceableAndCullBehind :: Scene -> Traceable
+scene2TraceableAndCullBehind scene ry = 
+   let applied = map (\f -> f ry) scene in
    let hits = filter rrHits applied in 
    let notBehindCamera = filter (\Hit {dist = dst} -> dst > 0) hits in 
    case notBehindCamera of 
@@ -304,37 +333,35 @@ getHitTraceable ry traceables =
 dm :: Vec -> Double -> Vec
 dm v d = v *. (0.9 ** d)
 
-getColorOfRay_v2 :: Ray -> Int -> Double -> Vec
-getColorOfRay_v2 ry limit totalDist = 
-   case (limit,getHitTraceable ry globalTraceablelist) of 
-      (_,NoHit) -> (0,0,0)
-      (_,Hit {dist=d, clr = c, newRay=Nothing}) -> dm c (d + totalDist)
-      (0,Hit {dist=d, clr = c, newRay=Just nr}) -> dm c (d + totalDist)
-      (_,Hit {dist=d, clr = c, newRay=Just nr}) -> getColorOfRay_v2 nr (limit - 1) (d + totalDist)
+getColorOfRay_v2 :: Scene -> Ray -> Int -> Double -> Vec
+getColorOfRay_v2 scene ry limit totalDist = 
+   case scene2TraceableAndCullBehind scene ry of 
+      NoHit -> skyblue
+      Hit {dist=d, clr = c, newRay=Nothing} -> dm c (d + totalDist)
+      Hit {dist=d, clr = c, newRay=Just nr} | limit <= 0 -> dm c (d + totalDist)
+      Hit {dist=d, clr = c, newRay=Just nr} -> getColorOfRay_v2 scene nr (limit - 1) (d + totalDist)
 
 
 --consider the image to be a square (you can still ask for pixel indices outside the square though.)
 --the main image is mapped onto x,y in [0, sidelength) 
-getColorAtPixel :: Camera -> Int -> Int -> Int -> Vec 
-getColorAtPixel cam sidelength x y = 
+getColorAtPixel :: Camera -> Scene -> Int -> Int -> Int -> Vec 
+getColorAtPixel cam scene sidelength x y = 
    let ry = getRayAtPixel cam sidelength x y in 
-      getColorOfRay_v2 ry 100 0
+      getColorOfRay_v2 scene ry 1 0
 
 -- getColorAtPixelW8 :: Camera -> Int -> Int -> Int -> (Pixel8,Pixel8,Pixel8)
 -- getColorAtPixelW8 cam sidelength x y =let (r,g,b) =  (getColorAtPixel cam sidelength x y) in
 --    (round r, round g, round b)
 
-getColorAtPixelInt ::  Camera -> Int -> Int -> Int -> (Int, Int, Int)
-getColorAtPixelInt cam sl x y = let (r,g,b) = getColorAtPixel cam sl x y in    
+getColorAtPixelInt ::  Camera -> Scene -> Int -> Int -> Int -> (Int, Int, Int)
+getColorAtPixelInt cam scene sl x y = let (r,g,b) = getColorAtPixel cam scene sl x y in    
    (round r, round g, round b)
 
-defaultCamera = Camera {position = (2,1,1), fov=pi/4, yaw=0,pitch=0}
+mainImage :: Scene -> Int -> [[Vec]]
+mainImage scene sl = map (\y -> map (getColorAtPixel defaultCamera scene sl y) [0..sl-1]) [0..sl-1]
 
-mainImage :: Int -> [[Vec]]
-mainImage sl = map (\y -> map (getColorAtPixel defaultCamera sl y) [0..sl-1]) [0..sl-1]
-
-mainImageInt :: Int -> [[(Int, Int, Int)]]
-mainImageInt sl = map (\y -> map (getColorAtPixelInt defaultCamera sl y) [0..sl-1]) [0..sl-1]
+mainImageInt :: Scene -> Int -> [[(Int, Int, Int)]]
+mainImageInt scene sl = map (\y -> map (getColorAtPixelInt defaultCamera scene sl y) [0..sl-1]) [0..sl-1]
 
 hPutIntPlusSpace :: Handle -> Int -> IO ()
 hPutIntPlusSpace handle i = do
@@ -355,6 +382,7 @@ hPutPixelListSpaced handle (px:pxs) = do
 
 saveImagesToGif :: String -> Int -> Int -> [[[(Int, Int, Int)]]] -> IO ()
 saveImagesToGif filename w h imgs = do
+   --putStrLn ("writing GIF: " ++ show imgs ++ "\n")
    (Just ins,_, _,_) <- createProcess (proc "java" ["-jar","GifWriterCommandLine.jar"]) {std_in = CreatePipe }
    hPutStr ins filename 
    hPutChar ins '\n'
@@ -362,11 +390,33 @@ saveImagesToGif filename w h imgs = do
    hPutIntPlusSpace ins h
    hPutIntPlusSpace ins (length imgs)
    hPutPixelListSpaced ins (concat (concat imgs))
+   hFlush ins
+   putStrLn "Done writing GIF."
    hClose ins 
 
 testgif = saveImagesToGif "test.gif" 1 1 [ [[(0,0,0)]],[[(255,255,255)]]]
 
-saveMainImageAsSingle sl = saveImagesToGif "main.gif" sl sl [mainImageInt sl]
+skyblue = (0x87,0xce,0xeb)
+white = (0,0,0)
+black = (0xff,0xff,0xff)
+gray = (0x80,0x80,0x80)
+red = (0xff,0x40,0)
+
+
+defaultCamera = Camera {position = (0,0.5,0), fov=pi/4, yaw=0,pitch=0}
+scene1 :: Scene
+scene1 = [
+   makeCheckerboardFloorPlane (-3) white gray 0 0,
+   makeReflectiveSphere (2,0,0) 1 red]
+
+-- >>>getColorAtPixel defaultCamera scene1 5 0 2
+-- ProgressCancelledException
+
+-- >>> mainImageInt scene1 1
+-- ProgressCancelledException
+
+saveMainImageAsSingle :: Int -> IO ()
+saveMainImageAsSingle sl = saveImagesToGif "main.gif" sl sl [mainImageInt scene1 sl]
 
 -- mainImageW8 :: Int -> [[(Pixel8,Pixel8,Pixel8)]]
 -- mainImageW8 sidelength = map (\y -> map (getColorAtPixelW8 defaultCamera sidelength y) [0..sidelength-1]) [0..sidelength-1]
