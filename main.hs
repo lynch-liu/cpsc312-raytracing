@@ -1,18 +1,18 @@
-{-# LANGUAGE GADTs #-}
-
 module Main where
 
 import qualified Data.Maybe
+import System.Process 
+import GHC.IO.Handle
 -- import Graphics.Gloss
 -- import Graphics.Gloss.Juicy
-import Codec.Picture
-import Codec.Picture.Gif
-import Codec.Picture.Types
-import qualified Data.Vector
-import qualified Data.Vector.Storable
+-- import Codec.Picture
+-- import Codec.Picture.Gif
+-- import Codec.Picture.Types
+-- import qualified Data.Vector
+-- import qualified Data.Vector.Storable
 
--- main :: IO ()
--- main = print "test"
+main :: IO ()
+main = print "test"
 
 type Vec = (Double,Double,Double)
 
@@ -187,9 +187,9 @@ trcbl1 ry =
       let Just (dist,pnt) = sphereIntersectDist sph ry in         -- calculate distance and hitPoint
       let pl = transformSpherePointToPlane sph pnt in             -- get plane generated from the hit point on sphere
       let newRay = Ray pnt (reflectDirOff pl (look ry)) in 
-               let colorr = 200 in
-      let colorg = 200 in
-      let colorb = 200 in       -- get the reflected ray
+               let colorr = 255 in
+      let colorg = 10 in
+      let colorb = 10 in       -- get the reflected ray
       let hitResult = Hit dist (colorr,colorg,colorb) (Just newRay) in   -- return the hitresult with distance, color and new ray
       hitResult
    else NoHit                                          -- Ray miss the sphere, return NoHit
@@ -206,9 +206,9 @@ trcbl2 ry =
    let pl = Plane (pntx,pnty,pntz) (nrmx,nrmy,nrmz) in   -- declare the plane
    if Data.Maybe.isJust (planeIntersectDist pl ry) then                                          -- Ray hit the sphere
       let Just (dist,pnt) = planeIntersectDist pl ry in                -- calculate distance and hitpoint
-      let colorr = 200 in
-      let colorg = 200 in
-      let colorb = 200 in
+      let colorr = 10 in
+      let colorg = 10 in
+      let colorb = 255 in
       let newRay = Nothing in                                     -- set to Nothing for non-reflective item
       let hitResult = Hit dist (colorr,colorg,colorb) newRay in   -- return the hitresult with distance, color and Nothing
       hitResult
@@ -320,60 +320,98 @@ getColorAtPixel cam sidelength x y =
    let ry = getRayAtPixel cam sidelength x y in 
       getColorOfRay_v2 ry 100 0
 
-getColorAtPixelW8 :: Camera -> Int -> Int -> Int -> (Pixel8,Pixel8,Pixel8)
-getColorAtPixelW8 cam sidelength x y =let (r,g,b) =  (getColorAtPixel cam sidelength x y) in
+-- getColorAtPixelW8 :: Camera -> Int -> Int -> Int -> (Pixel8,Pixel8,Pixel8)
+-- getColorAtPixelW8 cam sidelength x y =let (r,g,b) =  (getColorAtPixel cam sidelength x y) in
+--    (round r, round g, round b)
+
+getColorAtPixelInt ::  Camera -> Int -> Int -> Int -> (Int, Int, Int)
+getColorAtPixelInt cam sl x y = let (r,g,b) = getColorAtPixel cam sl x y in    
    (round r, round g, round b)
 
 defaultCamera = Camera {position = (2,1,1), fov=pi/4, yaw=0,pitch=0}
 
-
 mainImage :: Int -> [[Vec]]
-mainImage sidelength = map (\y -> map (getColorAtPixel defaultCamera sidelength y) [0..sidelength-1]) [0..sidelength-1]
+mainImage sl = map (\y -> map (getColorAtPixel defaultCamera sl y) [0..sl-1]) [0..sl-1]
 
-mainImageW8 :: Int -> [[(Pixel8,Pixel8,Pixel8)]]
-mainImageW8 sidelength = map (\y -> map (getColorAtPixelW8 defaultCamera sidelength y) [0..sidelength-1]) [0..sidelength-1]
+mainImageInt :: Int -> [[(Int, Int, Int)]]
+mainImageInt sl = map (\y -> map (getColorAtPixelInt defaultCamera sl y) [0..sl-1]) [0..sl-1]
 
-mainImageW83_cc :: Int -> [PixelBaseComponent Pixel8]
-mainImageW83_cc sidelength = concat (map (\(a,b,c) -> [ a, b, c]) (concat (mainImageW8 sidelength)))
+hPutIntPlusSpace :: Handle -> Int -> IO ()
+hPutIntPlusSpace handle i = do
+   hPutStr handle (show i)
+   hPutChar handle ' '
 
-getPixelRGB8 :: Camera -> Int -> Int -> Int -> PixelRGB8 
-getPixelRGB8 cam sidelength x y = let (r,g,b) = getColorAtPixelW8 cam sidelength x y in 
-   PixelRGB8 r g b
+hPutPixelSpaced :: Handle -> (Int, Int, Int) -> IO ()
+hPutPixelSpaced handle (r,g,b) = do
+   hPutIntPlusSpace handle r 
+   hPutIntPlusSpace handle g 
+   hPutIntPlusSpace handle b
 
-mainImagePixelRGB8 :: Int -> [PixelRGB8]
-mainImagePixelRGB8 sidelength = concat (map (\y -> map (getPixelRGB8 defaultCamera sidelength y) [0..sidelength-1]) [0..sidelength-1])
+hPutPixelListSpaced :: Handle -> [(Int, Int, Int)] -> IO ()
+hPutPixelListSpaced handle [] = return ()
+hPutPixelListSpaced handle (px:pxs) = do
+   hPutPixelSpaced handle px 
+   hPutPixelListSpaced handle pxs
+
+saveImagesToGif :: String -> Int -> Int -> [[[(Int, Int, Int)]]] -> IO ()
+saveImagesToGif filename w h imgs = do
+   (Just ins,_, _,_) <- createProcess (proc "java" ["-jar","GifWriterCommandLine.jar"]) {std_in = CreatePipe }
+   hPutStr ins filename 
+   hPutChar ins '\n'
+   hPutIntPlusSpace ins w
+   hPutIntPlusSpace ins h
+   hPutIntPlusSpace ins (length imgs)
+   hPutPixelListSpaced ins (concat (concat imgs))
+   hClose ins 
+
+testgif = saveImagesToGif "test.gif" 1 1 [ [[(0,0,0)]],[[(255,255,255)]]]
+
+saveMainImageAsSingle sl = saveImagesToGif "main.gif" sl sl [mainImageInt sl]
+
+-- mainImageW8 :: Int -> [[(Pixel8,Pixel8,Pixel8)]]
+-- mainImageW8 sidelength = map (\y -> map (getColorAtPixelW8 defaultCamera sidelength y) [0..sidelength-1]) [0..sidelength-1]
+
+-- mainImageW83_cc :: Int -> [PixelBaseComponent Pixel8]
+-- mainImageW83_cc sidelength = concat (map (\(a,b,c) -> [ a, b, c]) (concat (mainImageW8 sidelength)))
+
+-- getPixelRGB8 :: Camera -> Int -> Int -> Int -> PixelRGB8 
+-- getPixelRGB8 cam sidelength x y = let (r,g,b) = getColorAtPixelW8 cam sidelength x y in 
+--    PixelRGB8 r g b
+
+-- mainImagePixelRGB8 :: Int -> [PixelRGB8]
+-- mainImagePixelRGB8 sidelength = concat (map (\y -> map (getPixelRGB8 defaultCamera sidelength y) [0..sidelength-1]) [0..sidelength-1])
 
 
 -- >>>mainImage 2
 -- [[(180.0,180.0,180.0),(141.263602302561,141.263602302561,141.263602302561)],[(141.263602302561,141.263602302561,141.263602302561),(118.09800000000001,118.09800000000001,118.09800000000001)]]
  
-mainImageVectorP8 sl = Data.Vector.Storable.fromList (mainImageW83_cc sl)
+-- mainImageVectorP8 sl = Data.Vector.Storable.fromList (mainImageW83_cc sl)
 
-mainImageVectorPRGB8 sl = Data.Vector.Storable.fromList  (mainImagePixelRGB8 sl)
+-- mainImageVectorPRGB8 sl = Data.Vector.Storable.fromList  (mainImagePixelRGB8 sl)
 
-mainImageImage sidelength = Image {imageHeight = sidelength,imageWidth=sidelength,imageData=mainImageVectorPRGB8 sidelength}
-
-
-sidelength = 300
+-- mainImageImage sidelength = Image {imageHeight = sidelength,imageWidth=sidelength,imageData=mainImageVectorPRGB8 sidelength}
 
 
-testgif1frames = [getFrameFromImage (mainImageImage sidelength)]
-
-gifobj = 
-   let geWidth = sidelength in
-   let geHeight = sidelength in
-   let geLooping = LoopingForever in
-   let geFrames = testgif1frames in --type is [gifFrame] //TODO you need to generate frame by frame and put it in a []
-   GifEncode geWidth geHeight Nothing Nothing geLooping geFrames
-
-getFrameFromImage img = -- this thing only give you one frame from one image
-   let pxls = mainImageImage sidelength in --it is Image Pixel8 here
-   GifFrame sidelength sidelength Nothing Nothing 1 DisposalAny pxls
+-- sidelength = 300
 
 
-eitherIO :: Either String (IO ()) -> IO ()
-eitherIO = either (putStrLn) (\x -> x)
+-- testgif1frames = [getFrameFromImage (mainImageImage sidelength)]
 
-main :: IO ()
+-- gifobj = 
+--    let geWidth = sidelength in
+--    let geHeight = sidelength in
+--    let geLooping = LoopingForever in
+--    let geFrames = testgif1frames in --type is [gifFrame] //TODO you need to generate frame by frame and put it in a []
+--    GifEncode geWidth geHeight Nothing Nothing geLooping geFrames
 
-main = eitherIO (Codec.Picture.Gif.writeComplexGifImage "./img_output" (gifobj))  -- this save gif to local
+-- getFrameFromImage img = -- this thing only give you one frame from one image
+--    let pxls = mainImageImage sidelength in --it is Image Pixel8 here
+--    GifFrame sidelength sidelength Nothing Nothing 1 DisposalAny pxls
+
+
+-- eitherIO :: Either String (IO ()) -> IO ()
+-- eitherIO = either (putStrLn) (\x -> x)
+
+-- main :: IO ()
+
+-- main = eitherIO (Codec.Picture.Gif.writeComplexGifImage "./img_output" (gifobj))  -- this save gif to local
